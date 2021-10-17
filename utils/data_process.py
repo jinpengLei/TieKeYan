@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 import time
 TIMEFORMAT = "%Y-%m-%d %H:%M:%S"
-
+#数据统计处理
 def convert_time(timestamp):
     loca_time = time.localtime(int(timestamp))
     return time.strftime(TIMEFORMAT, loca_time)
