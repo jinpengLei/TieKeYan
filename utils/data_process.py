@@ -5,7 +5,7 @@ import time
 #数据统计处理
 origin_data_filename = "../data/fault.txt"
 csv_file_name = '../data/cars/2110.csv'
-class DataProcess():
+class DataProcess(object):
     TIMEFORMAT = "%Y-%m-%d %H:%M:%S"
     DATAITEM = ["time", "car_code", "fault_code", "is_master", "fault_pattern", "fault_state"]
     DATAITEMINDEX = {"is_master": 0, "fault_code": 1, "car_code": 2, "time": 3, "fault_pattern": 4, "fault_state": 5}
@@ -57,6 +57,7 @@ class DataProcess():
         dataframe = pd.DataFrame(csv_content)
         dataframe = dataframe.sort_values(by='time')
         dataframe['time'] = dataframe['time'].apply(lambda x: self.convert_time(x))
+        print(dataframe)
         return dataframe
 
     def to_csv(self, target_file_name='../data/test.csv'):
@@ -69,14 +70,23 @@ class DataProcess():
         cou = 0
         Max_nums = 0
         t = ""
+        nums_list = []
+        car_code_list = []
         for car_code, group in self.car_group_data:
             out_put_filename = '../data/cars/' + car_code + '.csv'
             print(car_code)
             print(group)
+            nums_list.append(len(group))
+            car_code_list.append(car_code)
             if(len(group) > Max_nums):
                 Max_nums, t = len(group), car_code
             group.to_csv(out_put_filename, index=False, sep=',')
+        df = pd.DataFrame({'car_code': car_code_list, 'nums': nums_list})
+        df = df.sort_values(by='nums', ascending=False)
+        df = df[:10]
+        print(df)
         print(Max_nums, t)
+
 
 
     def count_nums_by_time(self, time_interval=30):
@@ -104,8 +114,41 @@ class DataProcess():
         df = pd.DataFrame({'time': self.time_serial, 'fault_nums': self.counts_serial})
         df.to_csv(target_csv_filename, index=False, sep=',')
 
+class BigDataProcess(object):
+    fault_path = "E:/TieKeYan/data/fault"
+    parameter_path = "E:/TieKeYan/data/parameter"
+    gps_path = "E:/TieKeYan/data/gps"
+    self_check_path = "E:/TieKeYan/data/selfcheck"
+    def __init__(self, txtfilename):
+        self.txtfilename = txtfilename
+
+    def split_by_car_code(self):
+        with open(self.txtfilename, 'r') as f:
+            line = f.readline()
+            cou = 1
+            while line:
+                per_line_list = line[4:].split('|')
+                car_code = per_line_list[5]
+                if line[:2] == '01' or line[:2] == '02':
+                    filename = self.fault_path + "/" + car_code
+                elif line[:2] == '03':
+                    filename = self.parameter_path + "/" + car_code
+                elif line[:2] == '04':
+                    filename = self.self_check_path + "/" + car_code
+                else:
+                    filename = self.gps_path + "/" + car_code
+                filename = filename + '.txt'
+                with open(filename, 'a+') as f1:
+                    f1.write(line)
+                cou = cou + 1
+                line = f.readline()
+            print(cou)
+
+
 if __name__ == "__main__":
-    data_item_list = ['time', 'fault_code', 'car_code']
-    data_process = DataProcess(origin_data_filename, data_item_list, generate_csv=False)
-    data_process.count_nums_by_time()
+    bigdataprocess = BigDataProcess("E:/TieKeYan/113-66.txt")
+    bigdataprocess.split_by_car_code()
+    # data_item_list = ['time', 'fault_code', 'car_code']
+    # data_process = DataProcess(origin_data_filename, data_item_list, generate_csv=True)
+    # data_process.count_nums_by_time()
     # data_process.divide_by_car_code()
