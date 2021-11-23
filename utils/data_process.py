@@ -1,10 +1,11 @@
 import numpy as np
 import pandas as pd
 import time
-
+import matplotlib.pyplot as plt
+from pylab import *
 #数据统计处理
 origin_data_filename = "../data/fault.txt"
-csv_file_name = '../data/cars/2110.csv'
+csv_file_name = '../data/cars/1004.csv'
 class DataProcess(object):
     TIMEFORMAT = "%Y-%m-%d %H:%M:%S"
     DATAITEM = ["time", "car_code", "fault_code", "is_master", "fault_pattern", "fault_state"]
@@ -97,22 +98,35 @@ class DataProcess(object):
         self.counts_serial = []
         self.time_serial = []
         i = 0
+        start_time = time_serials[0]
+        end_time = time_serials[0] + time_interval
         while i < serials_len:
-            if time_serials[-1] - time_serials[i] < time_interval:
+            if time_serials[-1] < end_time:
                 break
             cou = 0
             j = i
-            while(time_serials[j] - time_serials[i] <= time_interval):
+            while(time_serials[j] - start_time <= time_interval):
                 cou = cou + 1
                 j = j + 1
             self.counts_serial.append(cou)
-            self.time_serial.append(time_serials[i])
+            self.time_serial.append(start_time)
+            start_time = end_time
+            end_time = end_time + time_interval
             i = j
         print(len(self.counts_serial))
         print(self.counts_serial)
         target_csv_filename = '../data/counts_serial.csv'
         df = pd.DataFrame({'time': self.time_serial, 'fault_nums': self.counts_serial})
+        df['time'] = df['time'].apply(lambda x: self.convert_time(x))
         df.to_csv(target_csv_filename, index=False, sep=',')
+        plt.plot(df['time'], df['fault_nums'])
+        plt.show()
+
+    def count_nums_by_day(self):
+        self.origin_data['day'] = self.origin_data['time'].apply(lambda x: "%s" % x[:10])
+        self.nums_by_days = self.origin_data.groupby('day').size()
+        self.nums_by_days.to_csv("../data/1004_nums_by_day.csv")
+        # df['Week/Year'] = df['Timestamp'].apply(lambda x: "%d/%d" % (x.week, x.year))
 
 class BigDataProcess(object):
     fault_path = "E:/TieKeYan/data/fault"
@@ -126,29 +140,33 @@ class BigDataProcess(object):
         with open(self.txtfilename, 'r') as f:
             line = f.readline()
             cou = 1
+            target_code = '1004'
             while line:
                 per_line_list = line[4:].split('|')
                 car_code = per_line_list[5]
-                if line[:2] == '01' or line[:2] == '02':
-                    filename = self.fault_path + "/" + car_code
-                elif line[:2] == '03':
-                    filename = self.parameter_path + "/" + car_code
-                elif line[:2] == '04':
-                    filename = self.self_check_path + "/" + car_code
+                flag = True
+                if line[:2] == '03' and car_code == target_code:
+                    filename = self.parameter_path + "/" + target_code
+                elif (line[:2] == '01' or line[:2] == '02') and car_code == target_code:
+                    filename = self.fault_path + "/" + target_code
+                elif line[:2] == '04' and car_code == target_code:
+                    filename = self.self_check_path + "/" + target_code
+                elif line[:2] == '05' and car_code == target_code:
+                    filename = self.gps_path + "/" + target_code
                 else:
-                    filename = self.gps_path + "/" + car_code
-                filename = filename + '.txt'
-                with open(filename, 'a+') as f1:
-                    f1.write(line)
+                    flag = False
+                if flag:
+                    filename = filename + '.txt'
+                    with open(filename, 'a+') as f1:
+                        f1.write(line)
                 cou = cou + 1
                 line = f.readline()
             print(cou)
 
 
 if __name__ == "__main__":
-    bigdataprocess = BigDataProcess("E:/TieKeYan/113-66.txt")
-    bigdataprocess.split_by_car_code()
-    # data_item_list = ['time', 'fault_code', 'car_code']
-    # data_process = DataProcess(origin_data_filename, data_item_list, generate_csv=True)
-    # data_process.count_nums_by_time()
-    # data_process.divide_by_car_code()
+    # bigdataprocess = BigDataProcess("E:/TieKeYan/113-66.txt")
+    # bigdataprocess.split_by_car_code()
+    data_item_list = ['time', 'fault_code', 'car_code']
+    data_process = DataProcess(origin_data_filename, data_item_list, generate_csv=False)
+    data_process.count_nums_by_time(time_interval=30)
