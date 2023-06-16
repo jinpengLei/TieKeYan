@@ -42,13 +42,13 @@ def unnormalize(x, Max, Min):
 def train(epoch, train_sets, test_sets, model, optimizer, window_size, criterion, Max, Min):
     train_loss_list = []
     test_loss_list = []
-    train_sets = train_sets.permute(1, 0, 2)
-    test_sets = test_sets.permute(1, 0, 2)
+    # train_sets = train_sets.permute(1, 0, 2)
+    # test_sets = test_sets.permute(1, 0, 2)
     for i in range(epoch):
         losses = 0
         print(train_sets.shape)
-        x = train_sets[:window_size, :, :].type(torch.float)
-        label = train_sets[-1, :, :].type(torch.float)
+        x = train_sets[:, :window_size, :].type(torch.float)
+        label = train_sets[:, -1, :].type(torch.float)
         pred = model(x)
         pred = pred.squeeze(0)
         loss = criterion(pred, label)
@@ -59,8 +59,8 @@ def train(epoch, train_sets, test_sets, model, optimizer, window_size, criterion
 
         print("epoch: {},loss : {}".format(i + 1, loss))
         # 测试集上的loss
-        x = test_sets[:window_size, :, :].type(torch.float)
-        label = test_sets[-1, :, :].type(torch.float)
+        x = test_sets[:, :window_size, :].type(torch.float)
+        label = test_sets[:, -1, :].type(torch.float)
         pred = model(x)
         pred = pred.squeeze(0)
         loss = criterion(pred, label)

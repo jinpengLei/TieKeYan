@@ -4,6 +4,7 @@ import time
 import matplotlib.pyplot as plt
 from pylab import *
 from openpyxl import load_workbook
+import xlrd
 #数据统计处理
 origin_data_filename = "../data/fault.txt"
 csv_file_name = '../data/cars/1004.csv'
@@ -152,6 +153,26 @@ class BigDataProcess(object):
                 cou = cou + 1
                 line = f.readline()
             print(cou)
+    def split_diff_data(self):
+        cou = [0] * 6
+        filename = "temp.txt"
+        num_dict = {1, 2, 3, 5}
+        with open(self.txtfilename, 'r') as f:
+            line = f.readline()
+            while line:
+                g = int(line[1])
+                print(g)
+                if g in num_dict and cou[g] < 3:
+                    with open(filename, 'a+') as f1:
+                        f1.write(line)
+                        print(g)
+                        cou[g] = cou[g] + 1
+                line = f.readline()
+                if cou[1] > 2 and cou[2] > 2 and cou[3] > 2 and cou[5] > 2:
+                    break
+
+
+
     def split_by_car_code(self):
         with open(self.txtfilename, 'r') as f:
             line = f.readline()
@@ -251,6 +272,88 @@ class BigDataProcess(object):
         df = df.sort_values(by='time')
         df.to_csv("parameter.csv", index=False)
 
+    def read_target_parameter(self):
+        xfwd_record_file = self.parameter_path + "/xfwd.txt"
+        speed_record_file = self.parameter_path + "/speed.txt"
+        target_file = "E:/TieKeYan/113-66.txt"
+        parameter_dict = dict()
+        unuse_time = set()
+        cou = 0
+        needed_parameters = {"1/8cxfwd", "2/7cxfwd", "3/6cxfwd", "4/5cxfwd", "lcsd"}
+        with open(target_file, 'r') as f:
+            line = f.readline()
+            while line:
+                cou = cou + 1
+                if line[0 : 2] != "03":
+                    line = f.readline()
+                    continue
+                line = line[4:]
+                line = line[:-1]
+                # print(line)
+                line_list = line.split('|')
+                item_time_carcode = int(line_list[6] + line_list[5])
+                if item_time_carcode in unuse_time:
+                    line = f.readline()
+                    continue
+                if item_time_carcode in parameter_dict.keys():
+                    temp_item = parameter_dict[item_time_carcode]
+                else:
+                    temp_item = dict()
+                for i in range(7, len(line_list)):
+                    parameter_info = line_list[i]
+                    parameter_info_list = parameter_info.split(",")
+                    if parameter_info_list[1] in needed_parameters:
+                        temp_item[parameter_info_list[1]] = int(float(parameter_info_list[2]))
+                # print(temp_item)
+                if "lcsd" in temp_item.keys() and temp_item["lcsd"] == 0:
+                    unuse_time.add(item_time_carcode)
+                    if item_time_carcode in parameter_dict:
+                        del parameter_dict[item_time_carcode]
+                else:
+                    if temp_item:
+                        parameter_dict[item_time_carcode] = temp_item
+                line = f.readline()
+        print(cou)
+        time_list = []
+        xfwd_3_6_list = []
+        xfwd_2_7_list = []
+        xfwd_1_8_list = []
+        xfwd_4_5_list = []
+        lcsd_list = []
+        for key in parameter_dict:
+            time_list.append(key)
+            temp = parameter_dict[key]
+            if "3/6cxfwd" in temp.keys():
+                xfwd_3_6_list.append(temp["3/6cxfwd"])
+            else:
+                xfwd_3_6_list.append(np.nan)
+            if "2/7cxfwd" in temp.keys():
+                xfwd_2_7_list.append(temp["2/7cxfwd"])
+            else:
+                xfwd_2_7_list.append(np.nan)
+            if "1/8cxfwd" in temp.keys():
+                xfwd_1_8_list.append(temp["1/8cxfwd"])
+            else:
+                xfwd_1_8_list.append(np.nan)
+            if "4/5cxfwd" in temp.keys():
+                xfwd_4_5_list.append(temp["4/5cxfwd"])
+            else:
+                xfwd_4_5_list.append(np.nan)
+            if "lcsd" in temp.keys():
+                lcsd_list.append(temp["lcsd"])
+            else:
+                lcsd_list.append(np.nan)
+
+            df = pd.DataFrame(
+                {"time": time_list, "xfwd_1_8": xfwd_1_8_list, "xfwd_2_7": xfwd_2_7_list, "xfwd_3_6": xfwd_3_6_list,
+                 "xfwd_4_5": xfwd_4_5_list, "lcsd": lcsd_list})
+            df = df.sort_values(by='time')
+            df_part = df.iloc[0:100000]
+            df_part.to_csv("part_parameter.csv", index=False)
+            df.to_csv("Allparameter.csv", index=False)
+
+
+
 def read_prompt_fault(file_name):
     workbook = load_workbook(filename=file_name)
     print(workbook.sheetnames)
@@ -303,7 +406,65 @@ def get_zero_V(file_name):
             temp = str(carno_time_list[i])
             res.add(temp[:-1])
     print(len(res))
+    print(res)
     return res
+
+def remove_0_v(filename):
+    data = pd.read_csv(filename)
+    print(data)
+    zero_v_list = []
+    lcsd_list = data['lcsd']
+    for i in range(len(lcsd_list)):
+        if lcsd_list[i] == 0:
+            zero_v_list.append(i)
+    data1 = data.drop(index=zero_v_list)
+    print(data1)
+    data1['carcode'] = data1['carno&time'].apply(lambda x: int(str(x)[0: 4]))
+    data1['time'] = data1['carno&time'].apply(lambda x: int(str(x)[4: ]))
+    data1 = data1.drop(['carno&time'], axis=1)
+    order = ['time', 'carcode', 'lcsd']
+    data1 = data1[order]
+    data1 = data1.sort_values(by='time')
+    data1.to_csv("speed.csv", index=False)
+
+def remove_abnormal_t(filename):
+    data = pd.read_csv(filename)
+    print(data)
+    abnormal_t_list = []
+    xfwd_list = data['xfwd']
+    for i in range(len(xfwd_list)):
+        if xfwd_list[i] == -50:
+            abnormal_t_list.append(i)
+    data1 = data.drop(index=abnormal_t_list)
+    print(data1)
+    data1['carcode'] = data1['carno&time'].apply(lambda x: int(str(x)[0: 4]))
+    data1['time'] = data1['carno&time'].apply(lambda x: int(str(x)[4:]))
+    data1 = data1.drop(['carno&time'], axis=1)
+    order = ['time', 'carcode', 'xfwd']
+    data1 = data1[order]
+    data1 = data1.sort_values(by='time')
+    data1.to_csv("xfwd.csv", index=False)
+
+def remove_abnormal_gps(filename):
+    data = pd.read_csv(filename)
+    print(data)
+    abnormal_gps_list = []
+    E_list = data['E']
+    N_list = data['N']
+    lcsd_list = data['lcsd']
+    for i in range(len(E_list)):
+        if E_list[i] == 0 or N_list[i] == 0:
+            abnormal_gps_list.append(i)
+    data1 = data.drop(index=abnormal_gps_list)
+    print(data1)
+    data1['carcode'] = data1['carno&time'].apply(lambda x: int(str(x)[0: 4]))
+    data1['time'] = data1['carno&time'].apply(lambda x: int(str(x)[4:]))
+    data1 = data1.drop(['carno&time'], axis=1)
+    order = ['time', 'carcode', 'lcsd', 'E', 'N']
+    data1 = data1[order]
+    data1 = data1.sort_values(by='time')
+    data1.to_csv("gps.csv", index=False)
+
 
 def get_car_fault(carcode, notice_class_fault_set):
     cou = 0
@@ -352,13 +513,58 @@ def get_car_fault(carcode, notice_class_fault_set):
     dataframe.to_csv("2065fault.csv", index=False)
     return dataframe
 
-def remove_same(filename):
+def get_all_fault(notice_class_fault_set):
+    cou = 0
+    class_dict, class_code_dict = read_fault_class("CR400AF-A&B故障字典及故障报警字典V1.xlsx")
+    zero_v_set = get_zero_V("../211223Res/spd.txt")
+    print(class_dict)
+    with open("fault.txt") as f:
+        line = f.readline()
+        data_item_nums = 5
+        data_list = [[] for _ in range(data_item_nums)]
+        while line:
+            line = line[4:]
+            per_line_list = line.split('|')
+            data_nums = len(per_line_list)
+            for i in range(7, data_nums):
+                fault = per_line_list[i]
+                data_info_list = fault.split(',')
+                vertifycode = data_info_list[2][:-2] + data_info_list[3][:-1]
+                if  vertifycode in zero_v_set or data_info_list[1] in notice_class_fault_set:
+                    continue
+                if data_info_list[1] not in class_dict.keys():
+                    continue
+                fault_code = data_info_list[1].strip()
+                fault_class = class_dict[fault_code]
+                fault_class_code = class_code_dict[fault_class]
+                data_list[0].append(data_info_list[3].strip())
+                data_list[1].append(data_info_list[2].strip())
+                data_list[2].append(data_info_list[1].strip())
+                data_list[3].append(fault_class)
+                data_list[4].append(fault_class_code)
+            cou = cou + 1
+            line = f.readline()
+    print(cou)
+    csv_content = {}
+    csv_content["time"] = data_list[0]
+    csv_content["car_code"] = data_list[1]
+    csv_content["fault_code"] = data_list[2]
+    csv_content["fault_class"] = data_list[3]
+    csv_content["fault_class_code"] = data_list[4]
+    dataframe = pd.DataFrame(csv_content)
+    dataframe = dataframe.sort_values(by='time')
+    print(dataframe)
+    dataframe.to_csv("allfault.csv", index=False)
+    return dataframe
+
+
+def remove_same(filename, targetfilename):
     df = pd.read_csv(filename)
     print(df)
     df['time'] = df['time'].apply(lambda x: x // 10 * 10)
     df.drop_duplicates(subset=["time", "fault_code"], inplace=True)
     print(df)
-    df.to_csv("2065target.csv", index=False)
+    df.to_csv(targetfilename, index=False)
 
 def convert_time(timestamp):
     loca_time = time.localtime(int(timestamp))
@@ -453,21 +659,130 @@ def read_gps(filename, targetcode):
         Province_set.add(getattr(row, 'Province'))
     print(Province_set)
     return df
+
+def merge_parameter():
+    df_xfwd = pd.read_csv('xfwd.csv')
+    abnormal_v_list = []
+    t_list = df_xfwd['time']
+    for i in range(len(t_list)):
+        if t_list[i] < 1000000000:
+            abnormal_v_list.append(i)
+    df_xfwd = df_xfwd.drop(index=abnormal_v_list)
+    df_xfwd.to_csv("xfwd.csv", index=False)
+
+def remove_abnormal_time():
+    df = pd.read_csv("speed.csv")
+    df_clear = df.drop(df[df['time'] < 1600000000].index)
+    print(df_clear)
+    df_clear.to_csv("true_speed.csv", index=False)
+
+def convert_file():
+    df = pd.read_csv("multi_series.csv")
+    df = df[['time', 'lcsd', 'E', 'N', 'xfwd']]
+    df.to_csv('train_env.csv', index=False)
+
+def get_integer_info(filename):
+    workbook = xlrd.open_workbook(filename)
+    worksheet = workbook.sheet_by_index(0)
+    nrows = worksheet.nrows
+    print(nrows)
+    ncols = worksheet.ncols
+    print(ncols)
+    NAME = 1
+    DATATYPE = 3
+    DEVCODE = 11
+    FAULTCLASS = 17
+    uint_target_info = []
+    int_target_info = []
+    cc_target_info = []
+    tmbin_target_info = []
+    bcd_target_info = []
+    type_nums = dict()
+    data_class_info = dict()
+    for i in range(1, nrows):
+        cell_data_type = worksheet.cell_value(i, DATATYPE)
+        if cell_data_type not in type_nums:
+            type_nums[cell_data_type] = 1
+        else:
+            type_nums[cell_data_type] = type_nums[cell_data_type] + 1
+        if cell_data_type == 'UINT':
+            fault_class = worksheet.cell_value(i, FAULTCLASS)
+            uint_target_info.append({'name': worksheet.cell_value(i, NAME), 'dev_code': worksheet.cell_value(i, DEVCODE), 'fault_class': fault_class})
+            if fault_class not in data_class_info:
+                data_class_info[fault_class] = 1
+            else:
+                data_class_info[fault_class] = data_class_info[fault_class] + 1
+        if cell_data_type == 'INT':
+            int_target_info.append({'name': worksheet.cell_value(i, NAME), 'dev_code': worksheet.cell_value(i, DEVCODE), 'fault_class': worksheet.cell_value(i, FAULTCLASS)})
+        if cell_data_type == 'cc':
+            cc_target_info.append({'name': worksheet.cell_value(i, NAME), 'dev_code': worksheet.cell_value(i, DEVCODE), 'fault_class': worksheet.cell_value(i, FAULTCLASS)})
+        if cell_data_type == 'TMBIN':
+            tmbin_target_info.append({'name': worksheet.cell_value(i, NAME), 'dev_code': worksheet.cell_value(i, DEVCODE), 'fault_class': worksheet.cell_value(i, FAULTCLASS)})
+        if cell_data_type == 'BCD':
+            bcd_target_info.append({'name': worksheet.cell_value(i, NAME), 'dev_code': worksheet.cell_value(i, DEVCODE), 'fault_class': worksheet.cell_value(i, FAULTCLASS)})
+    print(uint_target_info)
+    np.save("../data_record/uint_parameter_info.npy", uint_target_info)
+    return uint_target_info
+
+def genater_spd_csv(filename):
+    res = set()
+    data = pd.read_csv(filename)
+    carno_time_list = data['carno&time']
+    lcsd_list = data['lcsd']
+    for i in range(len(lcsd_list)):
+        if lcsd_list[i] == 0:
+            temp = str(carno_time_list[i])
+            res.add(temp[:-1])
+    print(len(res))
+    print(len(lcsd_list))
+    np.save("../data_record/zero_v_info.npy", res)
+    # print(res)
+    return res
+
+
 if __name__ == "__main__":
+    bigdataprocess = BigDataProcess("E:/TieKeYan/113-66.txt")
+    bigdataprocess.split_diff_data()
+    # genater_spd_csv("../211223Res/spd.txt")
+    # get_integer_info('CR400AF-A变量解析配置文件V1.0.xls')
+
+    # get_zero_V("../211223Res/spd.txt")
     # bigdataprocess = BigDataProcess("E:/TieKeYan/113-66.txt")
+    # bigdataprocess.split_fault()
+    # convert_file()
+    # bigdataprocess = BigDataProcess("E:/TieKeYan/113-66.txt")
+    # bigdataprocess.read_target_parameter()
     # bigdataprocess.split_fault()
     # needed_parameters = {"1/8cxfwd", "2/7cxfwd", "3/6cxfwd", "4/5cxfwd", "lcsd"}
     # bigdataprocess.extracte_parameter(needed_parameters)
 
-    data_item_list = ['time', 'fault_code', 'car_code']
-    zero_v_set = get_zero_V("../211223Res/spd.txt")
-    notice_class_fault_set = read_prompt_fault("副本附件1.8：动车组诊断代码总表-CR400AF平台.xlsx")
-    # get_car_fault("2065", notice_class_fault_set)
+    #data_item_list = ['time', 'fault_code', 'car_code']
+    #zero_v_set = get_zero_V("../211223Res/spd.txt")
+    #notice_class_fault_set = read_prompt_fault("副本附件1.8：动车组诊断代码总表-CR400AF平台.xlsx")
+    #get_car_fault("2065", notice_class_fault_set)
     # read_fault_class("CR400AF-A&B故障字典及故障报警字典V1.xlsx")
-    data_process = DataProcess("fault.txt", data_item_list, generate_csv=True, csv_filename="fault_info.csv", zero_v_set=zero_v_set, notice_class_fault_set=notice_class_fault_set)
-    data_process.count_nums_by_time(time_interval=15)
+    #data_process = DataProcess("fault.txt", data_item_list, generate_csv=True, csv_filename="fault_info.csv", zero_v_set=zero_v_set, notice_class_fault_set=notice_class_fault_set)
+    #data_process.count_nums_by_time(time_interval=15)
     # read_prompt_fault("副本附件1.8：动车组诊断代码总表-CR400AF平台.xlsx")
     # get_zero_V("../211223Res/spd.txt")
-    # remove_same("2065fault.csv")
+    # remove_same("2065fault.csv", "2065target.csv")
     # make_multi_series("parameter.csv", "2065target.csv")
     # read_gps("target.txt", "2065")
+
+    # data_item_list = ['time', 'fault_code', 'car_code']
+    # zero_v_set = get_zero_V("../211223Res/spd.txt")
+    # notice_class_fault_set = read_prompt_fault("副本附件1.8：动车组诊断代码总表-CR400AF平台.xlsx")
+    # get_all_fault(notice_class_fault_set)
+
+    # remove_same("allfault.csv", "alltarget.csv")
+    # remove_0_v("../211223Res/spd.txt")
+    # remove_abnormal_t("../211223Res/temp.txt")
+    # remove_abnormal_gps('../211223Res/gps.txt')
+    # merge_parameter()
+    # remove_abnormal_time()
+
+    # df = pd.read_csv("../utils/multi_series.csv")
+    # print(df)
+    # df = df[["time", "lcsd", "E", "N", "xfwd"]]
+    # print(df)
+    # df.to_csv('train_fault.csv', sep=",", index=False)

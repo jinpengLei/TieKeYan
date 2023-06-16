@@ -1,108 +1,95 @@
-# Import libraries
-import warnings
-import itertools
-import pandas as pd
 import numpy as np
+import pandas as pd
+import statsmodels as sm
+import statsmodels.tsa.api as tsa
 import matplotlib.pyplot as plt
-import statsmodels.api as sm
+from statsmodels.graphics.tsaplots import plot_acf, plot_pacf
+import itertools
+from sklearn.metrics import mean_squared_error, r2_score
+import warnings
+warnings.filterwarnings("ignore")
+plt.rcParams["font.sans-serif"] = ["SimHei"]
+plt.rcParams["axes.unicode_minus"] = False
 
-# Defaults
-plt.rcParams['figure.figsize'] = (20.0, 10.0)
-plt.rcParams.update({'font.size': 12})
-plt.style.use('ggplot')
-# Load the data
-data = pd.read_csv('../data/counts_serial.csv', engine='python', skipfooter=3)
+
+def test_stationarity(timeseries, alpha=1e-3):
+    dftest = tsa.adfuller(timeseries, autolag="AIC")
+    dfoutput = pd.Series(dftest[0:4], index=["Test Statistic", "p-value", "#Lags Used", "Number of Observations Used"])
+    for key, value in dftest[4].items():
+        dfoutput["Critical Value(%s)" % key] = value
+
+    print(dfoutput)
+    critical_value = dftest[4]["5%"]
+    test_statistic = dftest[0]
+    pvalue = dftest[1]
+    if pvalue < alpha and test_statistic < critical_value:
+        print("X is stationary")
+        return True
+    else:
+        print("X is not stationary")
+        return False
+
+data = pd.read_csv('../utils/counts_serial.csv', engine='python', skipfooter=3)
 # A bit of pre-processing to make it nicer
 data['time']=pd.to_datetime(data['time'], format='%Y-%m-%d %H:%M:%S')
 data.set_index(['time'], inplace=True)
-# Plot the data
-data.plot()
-plt.ylabel('fault nums')
-plt.xlabel('time')
+NGE = data["fault_nums"]
+print(NGE.head())
+
+fig, ax = plt.subplots(figsize=(15, 15))
+NGE.plot(ax=ax, fontsize=15)
+ax.set_title("故障数量变化图", fontsize=25)
+ax.set_xlabel("时间", fontsize=25)
+ax.set_ylabel("故障数量", fontsize=25)
+ax.legend(loc="best", fontsize=15)
+ax.grid()
+plt.show(ax)
+
+test_stationarity(NGE)
+
+nge_seasonal = NGE.diff(96)
+test_stationarity(nge_seasonal.dropna())
+
+from statsmodels.stats.diagnostic import acorr_ljungbox
+def test_white_noise(data):
+    return acorr_ljungbox(data.dropna(), return_df=True)
+
+test_white_noise(nge_seasonal)
+
+fig = plot_acf(nge_seasonal.dropna(), lags=40)
+fig = plot_pacf(nge_seasonal.dropna(), lags=40)
 plt.show()
 
 
-# Define the d and q parameters to take any value between 0 and 1
-q = d = range(0, 2)
-# Define the p parameters to take any value between 0 and 3
-p = range(0, 4)
+def grid_search(data):
+    p = q = range(0, 3)
+    s = [12]
+    d = [1]
+    PDQs = list(itertools.product(p, d, q, s))
+    pdq = list(itertools.product(p, d, q))
+    params = []
+    seasonal_params = []
+    results = []
+    grid = pd.DataFrame()
 
-# Generate all different combinations of p, q and q triplets
-pdq = list(itertools.product(p, d, q))
+    for param in pdq:
+        for seasonal_param in PDQs:
+            mod = tsa.SARIMAX(data, order=param, seasonal_order=seasonal_param, enforce_stationarity=False,
+                              enforce_invertibility=False)
+            result = mod.fit()
+            print("ARIMA{}x{} - AIC:{}".format(param, seasonal_param, result.aic))
+            params.append(param)
+            seasonal_params.append(seasonal_param)
+            results.append(result.aic)
 
-# Generate all different combinations of seasonal p, q and q triplets
-seasonal_pdq = [(x[0], x[1], x[2], 12) for x in list(itertools.product(p, d, q))]
+    grid["pdq"] = params
+    grid["PDQs"] = seasonal_params
+    grid["aic"] = results
+    print(grid[grid["aic"] == grid["aic"].min()])
 
-print('Examples of parameter combinations for Seasonal ARIMA...')
-print('SARIMAX: {} x {}'.format(pdq[1], seasonal_pdq[1]))
-print('SARIMAX: {} x {}'.format(pdq[1], seasonal_pdq[2]))
-print('SARIMAX: {} x {}'.format(pdq[2], seasonal_pdq[3]))
-print('SARIMAX: {} x {}'.format(pdq[2], seasonal_pdq[4]))
-train_data = data['2021-07-13 09:05:56':'2021-07-17 08:35:56']
-test_data = data['2021-07-17 09:05:56':'2021-07-18 08:05:56']
+grid_search(nge_seasonal.dropna())
 
-warnings.filterwarnings("ignore") # specify to ignore warning messages
-
-AIC = []
-SARIMAX_model = []
-for param in pdq:
-    for param_seasonal in seasonal_pdq:
-        try:
-            mod = sm.tsa.statespace.SARIMAX(train_data,
-                                            order=param,
-                                            seasonal_order=param_seasonal,
-                                            enforce_stationarity=False,
-                                            enforce_invertibility=False)
-
-            results = mod.fit()
-
-            print('SARIMAX{}x{} - AIC:{}'.format(param, param_seasonal, results.aic), end='\r')
-            AIC.append(results.aic)
-            SARIMAX_model.append([param, param_seasonal])
-        except:
-            continue
-print('The smallest AIC is {} for model SARIMAX{}x{}'.format(min(AIC), SARIMAX_model[AIC.index(min(AIC))][0],SARIMAX_model[AIC.index(min(AIC))][1]))
-
-
-# Let's fit this model
-mod = sm.tsa.statespace.SARIMAX(train_data,
-                                order=SARIMAX_model[AIC.index(min(AIC))][0],
-                                seasonal_order=SARIMAX_model[AIC.index(min(AIC))][1],
-                                enforce_stationarity=False,
-                                enforce_invertibility=False)
-
+mod = tsa.SARIMAX(NGE, order=(1, 1, 2), seasonal_order=(2, 1, 2, 12))
 results = mod.fit()
-
-results.plot_diagnostics(figsize=(20, 14))
-plt.show()
-
-
-pred0 = results.get_prediction(start='2021-07-16 09:05:56', dynamic=False)
-pred0_ci = pred0.conf_int()
-
-
-pred1 = results.get_prediction(start='2021-07-16 09:05:56', dynamic=True)
-pred1_ci = pred1.conf_int()
-
-pred2 = results.get_forecast('2021-07-20 08:35:56')
-pred2_ci = pred2.conf_int()
-print(pred2.predicted_mean['2021-07-17 09:05:56':'2021-07-18 09:35:56'])
-
-ax = data.plot(figsize=(20, 16))
-pred0.predicted_mean.plot(ax=ax, label='1-step-ahead Forecast (get_predictions, dynamic=False)')
-pred1.predicted_mean.plot(ax=ax, label='Dynamic Forecast (get_predictions, dynamic=True)')
-pred2.predicted_mean.plot(ax=ax, label='Dynamic Forecast (get_forecast)')
-ax.fill_between(pred2_ci.index, pred2_ci.iloc[:, 0], pred2_ci.iloc[:, 1], color='k', alpha=.1)
-plt.ylabel('Monthly airline passengers (x1000)')
-plt.xlabel('Date')
-plt.legend()
-plt.show()
-
-
-prediction = pred2.predicted_mean['2021-07-17 09:05:56':'2021-07-18 08:05:56'].values
-# flatten nested list
-truth = list(itertools.chain.from_iterable(test_data.values))
-# Mean Absolute Percentage Error
-MAPE = np.mean(np.abs((truth - prediction) / truth)) * 100
-
-print('The Mean Absolute Percentage Error for the forecast is{:.2f}%'.format(MAPE))
+test_white_noise(results.resid)
+fig_result = results.plot_diagnostics(figsize=(15, 12))
